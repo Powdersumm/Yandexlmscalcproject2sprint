@@ -1,7 +1,8 @@
-package main
+package calculation_test
 
 import (
 	"testing"
+
 	"github.com/Powdersumm/Yandexlmscalcproject/pkg/calculation"
 )
 
