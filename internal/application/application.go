@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
 	"github.com/Powdersumm/Yandexlmscalcproject/pkg/calculation"
 )
 
@@ -59,7 +60,7 @@ func (a *Application) Run() error {
 			return nil
 		}
 		//вычисляем выражение
-		result, err := rpn.Calc(text)
+		result, err := calculation.Calc(text)
 		if err != nil {
 			log.Println(text, " calculation failed wit error: ", err)
 		} else {
