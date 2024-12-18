@@ -1,9 +1,11 @@
-package main 
+package main
+
 import (
-	"github.com/Powdersumm/Yandexlmscalcproject/application"
+	"github.com/Powdersumm/Yandexlmscalcproject/iternal/application"
 )
-func main(){
-	app:= application.New()
-	app.runServer()
+
+func main() {
+	app := application.New()
+	app.RunServer()
+
 }
-tyntyntyntyn
