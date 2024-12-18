@@ -9,10 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
-
-	"your_module_path/rpn" // Add the correct import for rpn package
-
-	"github.com/Powdersumm/Yandexlmscalcproject/pkg/calculation" // Ensure this import is used
+	"github.com/Powdersumm/Yandexlmscalcproject/pkg/calculation"
 )
 
 type Request struct {
