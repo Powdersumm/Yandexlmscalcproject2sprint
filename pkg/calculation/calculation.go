@@ -114,7 +114,7 @@ func attachOperator(op rune, values []float64) ([]float64, error) {
 		}
 		result = b / a
 	default:
-		return values, ErrInvalidoperand
+		return values, ErrInvalidOperand
 	}
 	values = append(values, result)
 	return values, nil
