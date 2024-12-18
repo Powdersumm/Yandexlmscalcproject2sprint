@@ -84,7 +84,7 @@ func CalcHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "ошибочное выражение", http.StatusBadRequest)
 			return
 		} else if errors.Is(err, calculation.ErrInvalidZero) {
-			http.Error(w, "деление на ноль", http.StatusBadRequest)
+			http.Error(w, "деление на ноль", http.StatusInternalServerError)
 			return
 		} else if errors.Is(err, calculation.ErrInvalidParentheses) {
 			http.Error(w, "ошибка с скобками", http.StatusBadRequest)
