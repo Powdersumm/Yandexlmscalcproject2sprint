@@ -108,6 +108,6 @@ func CalcHandler(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) RunServer() error {
 	http.HandleFunc("/", CalcHandler)
-	return http.ListenAndServe(a.config.Addr, nil)
+	return http.ListenAndServe(":"+a.config.Addr, nil)
 
 }
