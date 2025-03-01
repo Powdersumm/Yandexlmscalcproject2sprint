@@ -1,21 +1,37 @@
 package application
 
 import (
-	"bufio"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"log"
 	"net/http"
 	"os"
-	"strings"
 
-	"github.com/Powdersumm/Yandexlmscalcproject/pkg/calculation"
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 )
 
 type Request struct {
 	Expression string `json:"expression"`
 }
+
+// Структуры для выражений и задач
+type Expression struct {
+	ID         string  `json:"id"`
+	Expression string  `json:"expression"`
+	Status     string  `json:"status"`
+	Result     float64 `json:"result,omitempty"`
+}
+
+type Task struct {
+	ID            string  `json:"id"`
+	Arg1          float64 `json:"arg1"`
+	Arg2          float64 `json:"arg2"`
+	Operation     string  `json:"operation"`
+	OperationTime int64   `json:"operation_time"`
+}
+
+// Глобальные переменные для хранения выражений и задач
+var expressions = make(map[string]*Expression)
+var tasks = make(chan Task, 10)
 
 type Config struct {
 	Addr string
@@ -40,74 +56,106 @@ func New() *Application {
 	}
 }
 
-// Функция запуска приложения
-// тут будем читать введенную строку и после нажатия ENTER писать результат работы программы на экране
-// если пользователь ввел exit - то останаваливаем приложение
-func (a *Application) Run() error {
-	for {
-		// читаем выражение для вычисления из командной строки
-		log.Println("input expression")
-		reader := bufio.NewReader(os.Stdin)
-		text, err := reader.ReadString('\n')
-		if err != nil {
-			log.Println("failed to read expression from console")
-		}
-		// убираем пробелы, чтобы оставить только вычислемое выражение
-		text = strings.TrimSpace(text)
-		// выходим, если ввели команду "exit"
-		if text == "exit" {
-			log.Println("aplication was successfully closed")
-			return nil
-		}
-		//вычисляем выражение
-		result, err := calculation.Calc(text)
-		if err != nil {
-			log.Println(text, " calculation failed wit error: ", err)
-		} else {
-			log.Println(text, "=", result)
-		}
-	}
+// Генерация уникальных ID
+func generateUniqueID() string {
+	return uuid.New().String()
 }
 
-func CalcHandler(w http.ResponseWriter, r *http.Request) {
-	request := new(Request)
-	defer r.Body.Close()
-	err := json.NewDecoder(r.Body).Decode(&request)
+// Функции для обработки HTTP запросов
+func AddExpressionHandler(w http.ResponseWriter, r *http.Request) {
+	var req Request
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "invalid expression", http.StatusUnprocessableEntity)
 		return
 	}
 
-	result, err := calculation.Calc(request.Expression)
-	if err != nil {
-		if errors.Is(err, calculation.ErrInvalidExpression) {
-			http.Error(w, "ошибочное выражение", http.StatusBadRequest)
-			return
-		} else if errors.Is(err, calculation.ErrInvalidZero) {
-			http.Error(w, "деление на ноль", http.StatusInternalServerError)
-			return
-		} else if errors.Is(err, calculation.ErrInvalidParentheses) {
-			http.Error(w, "ошибка с скобками", http.StatusBadRequest)
-			return
-		} else if errors.Is(err, calculation.ErrInvalidOperand) {
-			http.Error(w, "ошибка в операнде", http.StatusBadRequest)
-			return
-		} else if errors.Is(err, calculation.ErrInvalidValuesCount) {
-			http.Error(w, "ошибка в количестве полученных значений", http.StatusBadRequest)
-			return
-		} else if errors.Is(err, calculation.ErrInvalidCalculation) {
-			http.Error(w, "ошибка в посчитанном выражении", http.StatusBadRequest)
-			return
-		} else {
-			http.Error(w, "неизвестная ошибка ", http.StatusInternalServerError)
-		}
-	} else {
-		fmt.Fprintf(w, "result: %f", result)
+	// Генерация уникального ID для выражения
+	expressionID := generateUniqueID()
+
+	// Создание нового выражения
+	expression := &Expression{
+		ID:         expressionID,
+		Expression: req.Expression,
+		Status:     "pending", // Статус пока в ожидании
+	}
+
+	// Сохраняем выражение (например, в памяти или базе данных)
+	expressions[expressionID] = expression
+
+	// Генерируем задачу для вычислений
+	task := Task{
+		ID:        expressionID,
+		Arg1:      2.0, // Примерные аргументы, возможно потребуется вычислить из строки
+		Arg2:      3.0,
+		Operation: "+", // Пример операции
+	}
+
+	// Отправляем задачу в канал
+	tasks <- task
+
+	// Отправляем ответ с ID нового выражения
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"id": expressionID})
+}
+
+func GetExpressionsHandler(w http.ResponseWriter, r *http.Request) {
+	var expressionList []Expression
+	for _, expr := range expressions {
+		expressionList = append(expressionList, *expr)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"expressions": expressionList,
+	})
+}
+
+func GetExpressionByIDHandler(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	// Ищем выражение по ID
+	expr, found := expressions[id]
+	if !found {
+		http.Error(w, "expression not found", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(expr)
+}
+
+func GetTaskHandler(w http.ResponseWriter, r *http.Request) {
+	// Ищем задачу для выполнения
+	task, found := getNextTaskToProcess()
+	if !found {
+		http.Error(w, "no task available", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(task)
+}
+
+// Логика обработки задач
+func getNextTaskToProcess() (Task, bool) {
+	select {
+	case task := <-tasks:
+		return task, true
+	default:
+		return Task{}, false
 	}
 }
 
+// Функция запуска приложения
 func (a *Application) RunServer() error {
-	http.HandleFunc("/", CalcHandler)
-	return http.ListenAndServe(":"+a.config.Addr, nil)
+	r := mux.NewRouter()
 
+	// Эндпоинты для оркестратора
+	r.HandleFunc("/api/v1/calculate", AddExpressionHandler).Methods("POST")
+	r.HandleFunc("/api/v1/expressions", GetExpressionsHandler).Methods("GET")
+	r.HandleFunc("/api/v1/expressions/{id}", GetExpressionByIDHandler).Methods("GET")
+	r.HandleFunc("/internal/task", GetTaskHandler).Methods("GET")
+
+	return http.ListenAndServe(":"+a.config.Addr, r)
 }

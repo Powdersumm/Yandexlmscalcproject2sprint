@@ -3,7 +3,7 @@ package calculation_test
 import (
 	"testing"
 
-	"github.com/Powdersumm/Yandexlmscalcproject/pkg/calculation"
+	"github.com/Powdersumm/Yandexlmscalcproject2sprint/pkg/calculation"
 )
 
 func TestCalc(t *testing.T) {
