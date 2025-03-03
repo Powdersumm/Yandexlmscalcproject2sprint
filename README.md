@@ -106,6 +106,7 @@ URL: http://localhost:8080/internal/task
   - Тип контента: `application/json`
   - Формат данных в теле запроса: `raw JSON`
 
+![Post запрос на отправку выражения на сервер](https://github.com/Powdersumm/Yandexlmscalcproject2sprint/blob/main/photo_2024-10-06_17-51-11.jpg)
 
 
 
@@ -118,6 +119,10 @@ URL: http://localhost:8080/internal/task
 ```
  (или другой адрес, на котором ваш сервер обрабатывает GET-запросы).
 Метод: `GET`
+
+
+![Get запрос на получение результата вычесления с сервера](https://github.com/Powdersumm/Yandexlmscalcproject2sprint/blob/main/photo_2025-03-03_18-16-32.jpg)
+
 
 
 
