@@ -70,7 +70,12 @@ func getTask() (Task, error) {
 }
 
 func performCalculation(task Task) (float64, error) {
-	// Формируем строку выражения для вычислений, например: "2 + 3"
+	// Проверка корректности аргументов
+	if task.Arg1 == 0 || task.Arg2 == 0 {
+		return 0, fmt.Errorf("invalid arguments, task.Arg1 and task.Arg2 must not be zero")
+	}
+
+	// Формируем строку выражения для вычислений
 	expression := fmt.Sprintf("%f %s %f", task.Arg1, task.Operation, task.Arg2)
 
 	// Используем функцию Calc из пакета calculation для вычислений
