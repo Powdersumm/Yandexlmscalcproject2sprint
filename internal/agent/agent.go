@@ -55,31 +55,35 @@ func Start() {
 }
 
 func getTask() (Task, error) {
-	resp, err := http.Get("http://localhost:8080/internal/task")
-	if err != nil {
-		// Логируем ошибку, если не удалось отправить запрос
-		log.Printf("Error sending GET request to /internal/task: %v", err)
-		return Task{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		// Логируем ошибку, если получен статус, отличный от 200 (OK)
-		log.Printf("Failed to get task. HTTP status code: %d", resp.StatusCode)
-		return Task{}, fmt.Errorf("failed to get task, status code: %d", resp.StatusCode)
-	}
-
 	var task Task
-	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
-		// Логируем ошибку, если не удалось декодировать ответ JSON
-		log.Printf("Error decoding response body: %v", err)
-		return Task{}, err
+	var err error
+
+	for attempts := 0; attempts < 3; attempts++ {
+		resp, err := http.Get("http://localhost:8080/internal/task")
+		if err != nil {
+			log.Printf("Error sending GET request to /internal/task: %v", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Failed to get task. HTTP status code: %d", resp.StatusCode)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
+			log.Printf("Error decoding response body: %v", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		log.Printf("Successfully received task: %v", task)
+		return task, nil
 	}
 
-	// Логируем успешное получение задачи
-	log.Printf("Successfully received task: %v", task)
-
-	return task, nil
+	return task, fmt.Errorf("failed to get task after 3 attempts: %v", err)
 }
 
 func performCalculation(task Task) (float64, error) {
@@ -101,34 +105,35 @@ func performCalculation(task Task) (float64, error) {
 }
 
 func sendResult(taskID string, result float64) error {
-	// Формируем данные для отправки
 	resultData := Result{
 		ID:     taskID,
 		Result: result,
 	}
 
-	// Сериализуем данные в JSON
 	data, err := json.Marshal(resultData)
 	if err != nil {
 		log.Printf("Error marshalling result data: %v\n", err)
 		return err
 	}
 
-	// Отправляем результат на сервер
-	resp, err := http.Post("http://localhost:8080/internal/task", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		log.Printf("Error sending result to server: %v\n", err)
-		return err
-	}
-	defer resp.Body.Close()
+	for attempts := 0; attempts < 3; attempts++ {
+		resp, err := http.Post("http://localhost:8080/internal/task", "application/json", bytes.NewBuffer(data))
+		if err != nil {
+			log.Printf("Error sending result to server: %v\n", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		defer resp.Body.Close()
 
-	// Проверка статуса ответа от сервера
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to send result, received status code: %d\n", resp.StatusCode)
-		return fmt.Errorf("failed to send result, status code: %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Failed to send result, received status code: %d\n", resp.StatusCode)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		log.Printf("Successfully sent result for task %s, received status: %d\n", taskID, resp.StatusCode)
+		return nil
 	}
 
-	// Логирование успешного ответа
-	log.Printf("Successfully sent result for task %s, received status: %d\n", taskID, resp.StatusCode)
-	return nil
+	return fmt.Errorf("failed to send result after 3 attempts")
 }

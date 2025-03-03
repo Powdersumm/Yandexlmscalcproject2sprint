@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -37,7 +39,7 @@ type Task struct {
 
 // Глобальные переменные для хранения выражений и очереди задач
 var expressions = make(map[string]*Expression)
-var tasks = make(chan Task, 10)
+var tasks = make(chan Task, 10) // Буферизованный канал для задач
 
 // Config – конфигурация приложения
 type Config struct {
@@ -72,7 +74,6 @@ func generateUniqueID() string {
 }
 
 // parseExpression – функция для парсинга математического выражения в формате "<number> <operator> <number>"
-// Например: "5 * 7"
 func parseExpression(expr string) (float64, float64, string, error) {
 	parts := strings.Fields(expr)
 	if len(parts) != 3 {
@@ -84,7 +85,6 @@ func parseExpression(expr string) (float64, float64, string, error) {
 		return 0, 0, "", fmt.Errorf("error parsing numbers: %v, %v", err1, err2)
 	}
 	operator := parts[1]
-	// Допускаются операторы +, -, *, /
 	if operator != "+" && operator != "-" && operator != "*" && operator != "/" {
 		return 0, 0, "", fmt.Errorf("unsupported operator: %s", operator)
 	}
@@ -94,32 +94,30 @@ func parseExpression(expr string) (float64, float64, string, error) {
 // AddExpressionHandler – обработчик POST-запроса для добавления нового выражения
 func AddExpressionHandler(w http.ResponseWriter, r *http.Request) {
 	var req Request
-	// Декодируем JSON из тела запроса
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid expression payload", http.StatusBadRequest)
 		return
 	}
 
-	// Парсим выражение, чтобы извлечь операнды и оператор
 	arg1, arg2, operator, err := parseExpression(req.Expression)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Генерируем уникальный ID для выражения
 	expressionID := generateUniqueID()
 
-	// Создаём новое выражение со статусом "pending"
 	expr := &Expression{
 		ID:         expressionID,
 		Expression: req.Expression,
 		Status:     "pending",
 	}
-	// Сохраняем выражение в памяти
-	expressions[expressionID] = expr
 
-	// Формируем задачу для вычислений на основе разобранного выражения
+	// Защищаем доступ к глобальной карте expressions
+	expressionsMutex.Lock()
+	expressions[expressionID] = expr
+	expressionsMutex.Unlock()
+
 	task := Task{
 		ID:        expressionID,
 		Arg1:      arg1,
@@ -127,10 +125,19 @@ func AddExpressionHandler(w http.ResponseWriter, r *http.Request) {
 		Operation: operator,
 	}
 
-	// Отправляем задачу в канал для дальнейшей обработки агентом
-	tasks <- task
+	// Отправляем задачу в канал для обработки агентом
+	select {
+	case tasks <- task:
+		log.Printf("Задача с ID %s добавлена в канал", expressionID)
+		// Обновляем статус на "processing"
+		expressionsMutex.Lock()
+		expr.Status = "processing"
+		expressionsMutex.Unlock()
+	default:
+		http.Error(w, "канал задач переполнен", http.StatusInternalServerError)
+		return
+	}
 
-	// Отправляем клиенту ответ с ID созданного выражения
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"id": expressionID})
 }
@@ -150,7 +157,6 @@ func GetExpressionsHandler(w http.ResponseWriter, r *http.Request) {
 func GetExpressionByIDHandler(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 
-	// Ищем выражение по ID
 	expr, found := expressions[id]
 	if !found {
 		http.Error(w, "expression not found", http.StatusNotFound)
@@ -162,7 +168,6 @@ func GetExpressionByIDHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetTaskHandler(w http.ResponseWriter, r *http.Request) {
-	// Ищем задачу для выполнения
 	task, found := getNextTaskToProcess()
 	if !found {
 		http.Error(w, "no task available", http.StatusNotFound)
@@ -183,15 +188,65 @@ func getNextTaskToProcess() (Task, bool) {
 	}
 }
 
+// Функция для выполнения вычислений
+func processTask(task Task) {
+	var result float64
+	switch task.Operation {
+	case "+":
+		result = task.Arg1 + task.Arg2
+	case "-":
+		result = task.Arg1 - task.Arg2
+	case "*":
+		result = task.Arg1 * task.Arg2
+	case "/":
+		if task.Arg2 == 0 {
+			log.Printf("Ошибка: деление на ноль в задаче с ID %s", task.ID)
+			return
+		}
+		result = task.Arg1 / task.Arg2
+	}
+
+	// Проверка на NaN или бесконечность
+	if math.IsNaN(result) || math.IsInf(result, 0) {
+		log.Printf("Ошибка: результат вычисления для задачи с ID %s некорректен: %v", task.ID, result)
+		return
+	}
+
+	// Обновляем статус задачи на "completed" и сохраняем результат
+	expressionsMutex.Lock()
+	expr, found := expressions[task.ID]
+	if found {
+		expr.Status = "completed"
+		expr.Result = result
+	}
+	expressionsMutex.Unlock()
+
+	log.Printf("Задача с ID %s обработана, результат: %f", task.ID, result)
+}
+
+// Запуск агента для обработки задач
+func startAgent() {
+	for {
+		task, found := getNextTaskToProcess()
+		if found {
+			processTask(task)
+		} else {
+			log.Println("Задач нет в очереди, агент ожидает...")
+			time.Sleep(1 * time.Second) // Пауза, если задач нет
+		}
+	}
+}
+
 // Функция запуска приложения
 func (a *Application) RunServer() error {
 	r := mux.NewRouter()
 
-	// Эндпоинты для оркестратора
 	r.HandleFunc("/api/v1/calculate", AddExpressionHandler).Methods("POST")
 	r.HandleFunc("/api/v1/expressions", GetExpressionsHandler).Methods("GET")
 	r.HandleFunc("/api/v1/expressions/{id}", GetExpressionByIDHandler).Methods("GET")
 	r.HandleFunc("/internal/task", GetTaskHandler).Methods("GET")
+
+	go startAgent() // Запуск агента в отдельной горутине
 
 	fmt.Println("Запуск сервера на порту " + a.config.Addr)
 
