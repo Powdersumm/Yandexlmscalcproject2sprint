@@ -198,4 +198,5 @@ func (a *Application) RunServer() error {
 	if err := http.ListenAndServe(":"+a.config.Addr, r); err != nil {
 		log.Fatal("Ошибка при запуске сервера:", err)
 	}
+	return http.ListenAndServe(":"+a.config.Addr, r)
 }
