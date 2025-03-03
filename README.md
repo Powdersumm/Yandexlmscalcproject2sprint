@@ -16,7 +16,7 @@
 
 ```bash
 git clone https://github.com/Powdersumm/Yandexlmscalcproject2sprint.git
-````bash
+```
 
 
 ### 3. Запуск сервера
@@ -47,17 +47,24 @@ git clone https://github.com/Powdersumm/Yandexlmscalcproject2sprint.git
 
 ### Пример команды в PowerShell для отправки запроса:
 
-```powershell
+```bash
 Invoke-RestMethod -Uri http://localhost:8080/api/v1/calculate -Method Post -Body '{"expression": "2341615612424322 * 4"}' -ContentType "application/json"
+```
+
 после вы получаете ответ с ID:
 id
 --
 0704a462-9683-4430-abf2-8f05c0b82047
 
 ### Для получения ответа нужно использовать команду `Invoke-RestMethod` с параметром `-Method Get` и указать ID:
+```bash
 Invoke-RestMethod -Uri http://localhost:8080/api/v1/expressions/{ID}]
+```
 В моем случае:
+```bash
 Invoke-RestMethod -Uri http://localhost:8080/api/v1/expressions/0704a462-9683-4430-abf2-8f05c0b82047
+```
+
 
 Получаем такой ответ:
 id                                   expression           status    resul
