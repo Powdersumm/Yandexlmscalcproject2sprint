@@ -3,6 +3,7 @@ package application
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -192,5 +193,9 @@ func (a *Application) RunServer() error {
 	r.HandleFunc("/api/v1/expressions/{id}", GetExpressionByIDHandler).Methods("GET")
 	r.HandleFunc("/internal/task", GetTaskHandler).Methods("GET")
 
-	return http.ListenAndServe(":"+a.config.Addr, r)
+	fmt.Println("Запуск сервера на порту " + a.config.Addr)
+
+	if err := http.ListenAndServe(":"+a.config.Addr, r); err != nil {
+		log.Fatal("Ошибка при запуске сервера:", err)
+	}
 }
