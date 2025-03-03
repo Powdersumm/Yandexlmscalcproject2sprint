@@ -2,18 +2,22 @@ package application
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
+// Request – структура входящего запроса с выражением
 type Request struct {
 	Expression string `json:"expression"`
 }
 
-// Структуры для выражений и задач
+// Expression – структура для хранения выражения и его состояния
 type Expression struct {
 	ID         string  `json:"id"`
 	Expression string  `json:"expression"`
@@ -21,6 +25,7 @@ type Expression struct {
 	Result     float64 `json:"result,omitempty"`
 }
 
+// Task – структура задачи для вычисления
 type Task struct {
 	ID            string  `json:"id"`
 	Arg1          float64 `json:"arg1"`
@@ -29,14 +34,16 @@ type Task struct {
 	OperationTime int64   `json:"operation_time"`
 }
 
-// Глобальные переменные для хранения выражений и задач
+// Глобальные переменные для хранения выражений и очереди задач
 var expressions = make(map[string]*Expression)
 var tasks = make(chan Task, 10)
 
+// Config – конфигурация приложения
 type Config struct {
 	Addr string
 }
 
+// ConfigFromEnv – загрузка конфигурации из переменных окружения
 func ConfigFromEnv() *Config {
 	config := new(Config)
 	config.Addr = os.Getenv("PORT")
@@ -46,55 +53,83 @@ func ConfigFromEnv() *Config {
 	return config
 }
 
+// Application – основная структура приложения
 type Application struct {
 	config *Config
 }
 
+// New – создание нового экземпляра приложения
 func New() *Application {
 	return &Application{
 		config: ConfigFromEnv(),
 	}
 }
 
-// Генерация уникальных ID
+// generateUniqueID – генерация уникального идентификатора
 func generateUniqueID() string {
 	return uuid.New().String()
 }
 
-// Функции для обработки HTTP запросов
+// parseExpression – функция для парсинга математического выражения в формате "<number> <operator> <number>"
+// Например: "5 * 7"
+func parseExpression(expr string) (float64, float64, string, error) {
+	parts := strings.Fields(expr)
+	if len(parts) != 3 {
+		return 0, 0, "", fmt.Errorf("invalid expression format, expected format: <number> <operator> <number>")
+	}
+	arg1, err1 := strconv.ParseFloat(parts[0], 64)
+	arg2, err2 := strconv.ParseFloat(parts[2], 64)
+	if err1 != nil || err2 != nil {
+		return 0, 0, "", fmt.Errorf("error parsing numbers: %v, %v", err1, err2)
+	}
+	operator := parts[1]
+	// Допускаются операторы +, -, *, /
+	if operator != "+" && operator != "-" && operator != "*" && operator != "/" {
+		return 0, 0, "", fmt.Errorf("unsupported operator: %s", operator)
+	}
+	return arg1, arg2, operator, nil
+}
+
+// AddExpressionHandler – обработчик POST-запроса для добавления нового выражения
 func AddExpressionHandler(w http.ResponseWriter, r *http.Request) {
 	var req Request
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		http.Error(w, "invalid expression", http.StatusUnprocessableEntity)
+	// Декодируем JSON из тела запроса
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid expression payload", http.StatusBadRequest)
 		return
 	}
 
-	// Генерация уникального ID для выражения
+	// Парсим выражение, чтобы извлечь операнды и оператор
+	arg1, arg2, operator, err := parseExpression(req.Expression)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Генерируем уникальный ID для выражения
 	expressionID := generateUniqueID()
 
-	// Создание нового выражения
-	expression := &Expression{
+	// Создаём новое выражение со статусом "pending"
+	expr := &Expression{
 		ID:         expressionID,
 		Expression: req.Expression,
-		Status:     "pending", // Статус пока в ожидании
+		Status:     "pending",
 	}
+	// Сохраняем выражение в памяти
+	expressions[expressionID] = expr
 
-	// Сохраняем выражение (например, в памяти или базе данных)
-	expressions[expressionID] = expression
-
-	// Генерируем задачу для вычислений
+	// Формируем задачу для вычислений на основе разобранного выражения
 	task := Task{
 		ID:        expressionID,
-		Arg1:      2.0, // Примерные аргументы, возможно потребуется вычислить из строки
-		Arg2:      3.0,
-		Operation: "+", // Пример операции
+		Arg1:      arg1,
+		Arg2:      arg2,
+		Operation: operator,
 	}
 
-	// Отправляем задачу в канал
+	// Отправляем задачу в канал для дальнейшей обработки агентом
 	tasks <- task
 
-	// Отправляем ответ с ID нового выражения
+	// Отправляем клиенту ответ с ID созданного выражения
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"id": expressionID})
 }
