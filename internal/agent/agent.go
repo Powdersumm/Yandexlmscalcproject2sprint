@@ -25,28 +25,32 @@ type Result struct {
 
 func Start() {
 	for {
-		// Получаем задачу от оркестратора с повторными попытками
-		task, err := getTaskWithRetries()
-		if err != nil {
-			log.Printf("Error getting task after %d attempts: %v", maxRetries, err)
-			time.Sleep(baseDelay) // Задержка перед новой попыткой
+		// Получаем задачу от оркестратора
+		task, found := getNextTaskToProcess()
+		if !found {
+			log.Println("No task available, waiting...")
+			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		// Выполняем вычисление задачи с повторными попытками
-		result, err := performCalculationWithRetries(task)
+		// Выполняем вычисление задачи
+		result, err := performCalculation(task)
 		if err != nil {
-			log.Printf("Error performing calculation for task %s: %v", task.ID, err)
+			log.Println("Error performing calculation:", err)
 			continue
 		}
 
-		// Отправляем результат обратно в оркестратор с повторными попытками
-		err = sendResultWithRetries(task.ID, result)
+		// Отправляем результат обратно в оркестратор
+		err = sendResult(task.ID, result)
 		if err != nil {
-			log.Printf("Error sending result for task %s: %v", task.ID, err)
+			log.Println("Error sending result:", err)
 		}
 
-		time.Sleep(baseDelay) // Задержка между задачами
+		// Обновляем статус выражения
+		expressions[task.ID].Status = "completed"
+		expressions[task.ID].Result = result
+
+		time.Sleep(2 * time.Second) // Задержка между задачами
 	}
 }
 
