@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,8 @@ import (
 type Request struct {
 	Expression string `json:"expression"`
 }
+
+var expressionsMutex = &sync.Mutex{}
 
 // Expression – структура для хранения выражения и его состояния
 type Expression struct {
