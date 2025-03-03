@@ -16,6 +16,7 @@
 
 ```bash
 git clone https://github.com/Powdersumm/Yandexlmscalcproject2sprint.git
+````bash
 
 
 ### 3. Запуск сервера
