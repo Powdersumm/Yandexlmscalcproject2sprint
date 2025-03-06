@@ -26,29 +26,32 @@ type Result struct {
 func Start() {
 	for {
 		// Получаем задачу от оркестратора
-		task, found := getNextTaskToProcess()
+		task, found := getTask()
 		if !found {
 			log.Println("No task available, waiting...")
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		// Выполняем вычисление задачи
-		result, err := performCalculation(task)
-		if err != nil {
-			log.Println("Error performing calculation:", err)
-			continue
-		}
+		// Запускаем горутину для обработки каждой задачи
+		go func(task Task) {
+			// Выполняем вычисление задачи
+			result, err := performCalculation(task)
+			if err != nil {
+				log.Println("Error performing calculation:", err)
+				return
+			}
 
-		// Отправляем результат обратно в оркестратор
-		err = sendResult(task.ID, result)
-		if err != nil {
-			log.Println("Error sending result:", err)
-		}
+			// Отправляем результат обратно в оркестратор
+			err = sendResult(task.ID, result)
+			if err != nil {
+				log.Println("Error sending result:", err)
+			}
 
-		// Обновляем статус выражения
-		expressions[task.ID].Status = "completed"
-		expressions[task.ID].Result = result
+			// Обновляем статус выражения
+			expressions[task.ID].Status = "completed"
+			expressions[task.ID].Result = result
+		}(task)
 
 		time.Sleep(2 * time.Second) // Задержка между задачами
 	}
@@ -87,7 +90,7 @@ func getTask() (Task, error) {
 }
 
 func performCalculation(task Task) (float64, error) {
-	// Проверка корректности аргументов
+	// Проверка корректности аргументов (если нужно)
 	if task.Arg1 == 0 || task.Arg2 == 0 {
 		return 0, fmt.Errorf("invalid arguments, task.Arg1 and task.Arg2 must not be zero")
 	}

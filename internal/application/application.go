@@ -7,11 +7,10 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/Knetic/govaluate"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
@@ -77,21 +76,16 @@ func generateUniqueID() string {
 }
 
 // parseExpression – функция для парсинга математического выражения в формате "<number> <operator> <number>"
-func parseExpression(expr string) (float64, float64, string, error) {
-	parts := strings.Fields(expr)
-	if len(parts) != 3 {
-		return 0, 0, "", fmt.Errorf("invalid expression format, expected format: <number> <operator> <number>")
+func parseComplexExpression(expr string) (float64, error) {
+	ev, err := govaluate.NewEvaluableExpression(expr)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка при парсинге выражения: %v", err)
 	}
-	arg1, err1 := strconv.ParseFloat(parts[0], 64)
-	arg2, err2 := strconv.ParseFloat(parts[2], 64)
-	if err1 != nil || err2 != nil {
-		return 0, 0, "", fmt.Errorf("error parsing numbers: %v, %v", err1, err2)
+	result, err := ev.Evaluate(nil)
+	if err != nil {
+		return 0, fmt.Errorf("ошибка при вычислении: %v", err)
 	}
-	operator := parts[1]
-	if operator != "+" && operator != "-" && operator != "*" && operator != "/" {
-		return 0, 0, "", fmt.Errorf("unsupported operator: %s", operator)
-	}
-	return arg1, arg2, operator, nil
+	return result.(float64), nil
 }
 
 // AddExpressionHandler – обработчик POST-запроса для добавления нового выражения
@@ -102,18 +96,21 @@ func AddExpressionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	arg1, arg2, operator, err := parseExpression(req.Expression)
+	// Используем функцию parseComplexExpression для вычисления результата
+	result, err := parseComplexExpression(req.Expression)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Генерация уникального ID для выражения
 	expressionID := generateUniqueID()
 
 	expr := &Expression{
 		ID:         expressionID,
 		Expression: req.Expression,
 		Status:     "pending",
+		Result:     result, // Записываем результат сразу
 	}
 
 	// Защищаем доступ к глобальной карте expressions
@@ -121,26 +118,7 @@ func AddExpressionHandler(w http.ResponseWriter, r *http.Request) {
 	expressions[expressionID] = expr
 	expressionsMutex.Unlock()
 
-	task := Task{
-		ID:        expressionID,
-		Arg1:      arg1,
-		Arg2:      arg2,
-		Operation: operator,
-	}
-
-	// Отправляем задачу в канал для обработки агентом
-	select {
-	case tasks <- task:
-		log.Printf("Задача с ID %s добавлена в канал", expressionID)
-		// Обновляем статус на "processing"
-		expressionsMutex.Lock()
-		expr.Status = "processing"
-		expressionsMutex.Unlock()
-	default:
-		http.Error(w, "канал задач переполнен", http.StatusInternalServerError)
-		return
-	}
-
+	// Возвращаем ответ с ID выражения
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"id": expressionID})
 }
